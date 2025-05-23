@@ -5,8 +5,19 @@ document.addEventListener('DOMContentLoaded', function () {
   setupNavigation();
   setupForms(); // Call once initially
   updateAuthUI();
+  if (isLoggedIn()) {
+    initializeChat();
+}
 });
+function isLoggedIn() {
+    return localStorage.getItem('isAuthenticated') === 'true';
+}
 
+// Add getUserId function
+function getUserId() {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return user.id || 0;
+}
 // Show specified page and hide others
 function showPage(pageId) {
   document.querySelectorAll('.page-section').forEach(section => {
@@ -203,58 +214,70 @@ function handleLogin() {
     });
 }
 // Handle registration
- async function handleRegister() {
-    const form = document.getElementById('register-form');
-    if (!form) {
-        console.error('Register form not found!');
-        return;
-    }
+async function handleRegister() {
+    console.log('handleRegister called');
+console.trace(); // This will show where the function was called from
+    try {
+        const form = document.getElementById('register-form');
+        if (!form) {
+            console.error('Register form not found!');
+            return;
+        }
 
-    const formData = new FormData(form);
+        // This MUST come first - before any usage of formData
+        const formData = new FormData(form);
 
-    document.querySelectorAll('.error-message').forEach(el => el.textContent = '');
-    let hasErrors = false;
+        // Debugging: Log form data
+        console.log("Form Data Entries:");
+        for (let [key, value] of formData.entries()) {
+            console.log(key, value);
+        }
 
-    const requiredFields = [
-        'username', 'email', 'password', 'confirmpassword',
-        'firstname', 'lastname', 'age', 'gender'
-    ];
+        // Clear previous errors
+        document.querySelectorAll('.error-message').forEach(el => el.textContent = '');
+        
+        // Validate required fields
+        const requiredFields = [
+            'username', 'email', 'password', 'confirmpassword',
+            'firstname', 'lastname', 'age', 'gender'
+        ];
 
-    for (const field of requiredFields) {
-        const value = formData.get(field);
-        if (!value) {
-            const errorElement = document.getElementById(`${field}-error`) ||
-                document.getElementById(`${field === 'password' ? 'reg-password' : field}-error`);
+        let hasErrors = false;
+        for (const field of requiredFields) {
+            const value = formData.get(field);
+            if (!value) {
+                const errorElement = document.getElementById(`${field}-error`) ||
+                    document.getElementById(`${field === 'password' ? 'reg-password' : field}-error`);
+                if (errorElement) {
+                    errorElement.textContent = 'This field is required';
+                    hasErrors = true;
+                }
+            }
+        }
+
+        // Validate password match
+        const password = formData.get('password');
+        const confirmPassword = formData.get('confirmpassword');
+        if (password !== confirmPassword) {
+            const errorElement = document.getElementById('confirmpassword-error');
             if (errorElement) {
-                errorElement.textContent = 'This field is required';
+                errorElement.textContent = 'Passwords do not match';
                 hasErrors = true;
             }
         }
-    }
 
-    const password = formData.get('password');
-    const confirmPassword = formData.get('confirmpassword');
-    if (password !== confirmPassword) {
-        const errorElement = document.getElementById('confirmpassword-error');
-        if (errorElement) {
-            errorElement.textContent = 'Passwords do not match';
-            hasErrors = true;
-        }
-    }
+        if (hasErrors) return;
 
-    if (hasErrors) return;
-
-    try {
+        // Submit to server
         const response = await fetch('/register', {
             method: 'POST',
-            body: formData // Your existing FormData
+            body: formData
         });
 
         const data = await response.json();
 
         if (!response.ok) {
             if (data.errors) {
-                // Display field-specific errors
                 for (const [field, message] of Object.entries(data.errors)) {
                     const errorElement = document.getElementById(`${field}-error`);
                     if (errorElement) errorElement.textContent = message;
@@ -269,10 +292,10 @@ function handleLogin() {
         }
     } catch (error) {
         console.error('Registration error:', error);
-        // Show error to user
+        // Show generic error to user
+        alert('Registration failed. Please try again.');
     }
 }
-
 // Handle creating a post
 async function loadCategories() {
     try {
