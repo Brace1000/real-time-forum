@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"real/auth"
@@ -22,17 +23,17 @@ var upgrader = websocket.Upgrader{
 type Client struct {
 	conn   *websocket.Conn
 	userID int
-	send   chan map[string]interface{}
+	send   chan []byte // Changed to []byte for more flexible message passing
 }
 
 var (
 	clients       = make(map[int]*Client)
 	clientsMutex  sync.Mutex
-	broadcast     = make(chan map[string]interface{})
 )
 
 // HandleWebSocket upgrades HTTP connection to WebSocket and manages the connection
-func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+func HandleWebSocket(w http.ResponseWriter, r *http.Request){
+log.Println("Attempting to upgrade to WebSocket connection") 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Upgrade error:", err)
@@ -42,14 +43,26 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	userID := auth.GetCurrentUserID(r)
 	if userID == 0 {
 		log.Println("WebSocket: Unauthorized connection attempt")
-		conn.Close()
+		
 		return
 	}
+	log.Printf("Successful WebSocket connection for user ID %d", userID)
+
+
+	// Check if client already exists, close previous connection
+	clientsMutex.Lock()
+	if existingClient, exists := clients[userID]; exists {
+		// Close the send channel to signal the writePump to exit
+		close(existingClient.send)
+		// Don't close connection here - let the writePump handle it
+		log.Printf("Replacing existing connection for User ID %d", userID)
+	}
+	clientsMutex.Unlock()
 
 	client := &Client{
 		conn:   conn,
 		userID: userID,
-		send:   make(chan map[string]interface{}, 256),
+		send:   make(chan []byte, 256),
 	}
 
 	// Register client
@@ -67,40 +80,76 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Client) readPump() {
-	defer func() {
-		unregisterClient(c.userID)
-		auth.UpdateUserStatus(c.userID, false)
-		broadcastUserStatus(c.userID, false)
-		c.conn.Close()
-	}()
+    defer func() {
+        log.Printf("Closing connection for user %d", c.userID)
+        unregisterClient(c.userID)
+        c.conn.Close()
+    }()
 
-	c.conn.SetReadLimit(512 * 1024) // 512KB max message size
-	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
+    for {
+        _, message, err := c.conn.ReadMessage()
+        if err != nil {
+            if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+                log.Printf("WebSocket read error: %v", err)
+            }
+            break
+        }
 
-	for {
-		var msg struct {
-			Type    string `json:"type"`
-			To      int    `json:"to"`
-			Content string `json:"content"`
-		}
-		err := c.conn.ReadJSON(&msg)
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket error: %v", err)
-			}
-			break
-		}
+        log.Printf("Received raw message from user %d: %s", c.userID, string(message))
 
-		// Handle private message
-		if msg.Type == "message" && msg.To > 0 && msg.Content != "" {
-			SavePrivateMessage(c.userID, msg.To, msg.Content)
-			sendToRecipient(c.userID, msg.To, msg.Content)
-		}
-	}
+        var msg struct {
+            Type    string `json:"type"`
+            To      int    `json:"to"`
+            Content string `json:"content"`
+        }
+
+        if err := json.Unmarshal(message, &msg); err != nil {
+            log.Printf("Error parsing message: %v", err)
+            continue
+        }
+
+        log.Printf("Parsed message: %+v", msg)
+
+        if msg.Type == "message" && msg.To > 0 && msg.Content != "" {
+            log.Printf("Processing private message from %d to %d", c.userID, msg.To)
+            
+            if err := SavePrivateMessage(c.userID, msg.To, msg.Content); err != nil {
+                log.Printf("Failed to save message: %v", err)
+                continue
+            }
+
+            sendToRecipient(c.userID, msg.To, msg.Content)
+        }
+    }
+}
+
+func SendMessageToClient(from, to int, content string) {
+    msg := map[string]interface{}{
+        "type":      "message",
+        "from":      from,
+        "to":        to,
+        "content":   content,
+        "timestamp": time.Now().Format(time.RFC3339),
+    }
+
+    jsonMsg, err := json.Marshal(msg)
+    if err != nil {
+        log.Printf("Error marshalling message: %v", err)
+        return
+    }
+
+    clientsMutex.Lock()
+    defer clientsMutex.Unlock()
+    
+    if client, ok := clients[to]; ok {
+        select {
+        case client.send <- jsonMsg:
+        default:
+            // Handle full buffer
+            close(client.send)
+            delete(clients, to)
+        }
+    }
 }
 
 func (c *Client) writePump() {
@@ -120,8 +169,20 @@ func (c *Client) writePump() {
 				return
 			}
 
-			if err := c.conn.WriteJSON(message); err != nil {
-				log.Println("Write error:", err)
+			w, err := c.conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}
+			w.Write(message)
+
+			// Add queued chat messages to the current websocket message
+			n := len(c.send)
+			for i := 0; i < n; i++ {
+				w.Write([]byte{'\n'})
+				w.Write(<-c.send)
+			}
+
+			if err := w.Close(); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -135,18 +196,20 @@ func (c *Client) writePump() {
 
 func registerClient(c *Client) {
 	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+	
 	clients[c.userID] = c
-	clientsMutex.Unlock()
 	log.Printf("Client registered: User ID %d", c.userID)
 }
 
 func unregisterClient(userID int) {
 	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+	
 	if _, ok := clients[userID]; ok {
 		delete(clients, userID)
 		log.Printf("Client unregistered: User ID %d", userID)
 	}
-	clientsMutex.Unlock()
 }
 
 func sendToRecipient(from, to int, content string) {
@@ -161,15 +224,25 @@ func sendToRecipient(from, to int, content string) {
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
 
+	jsonMsg, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshalling message: %v", err)
+		return
+	}
+
 	if ok {
 		select {
-		case client.send <- msg:
+		case client.send <- jsonMsg:
 			// Message sent to client's channel
+			log.Printf("Message sent from %d to %d", from, to)
 		default:
 			// Client's buffer is full
+			log.Printf("Client buffer full for user %d", to)
 			unregisterClient(to)
 			auth.UpdateUserStatus(to, false)
 		}
+	} else {
+		log.Printf("Recipient %d not connected", to)
 	}
 }
 
@@ -180,14 +253,23 @@ func broadcastUserStatus(userID int, isOnline bool) {
 		"isOnline": isOnline,
 	}
 
+	jsonStatus, err := json.Marshal(status)
+	if err != nil {
+		log.Printf("Error marshalling status: %v", err)
+		return
+	}
+
 	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+	
 	for _, client := range clients {
 		if client.userID != userID {
 			select {
-			case client.send <- status:
-				// Message sent to client's channel
+			case client.send <- jsonStatus:
+				// Status sent to client's channel
 			default:
-				// Client's buffer is full
+				// Client's buffer is full - don't unregister here to avoid
+				// deadlock since we're already holding the mutex
 				go func(id int) {
 					unregisterClient(id)
 					auth.UpdateUserStatus(id, false)
@@ -195,5 +277,4 @@ func broadcastUserStatus(userID int, isOnline bool) {
 			}
 		}
 	}
-	clientsMutex.Unlock()
 }
