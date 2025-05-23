@@ -181,7 +181,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Reusable helper to write JSON responses
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
+func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(status)
     if err := json.NewEncoder(w).Encode(data); err != nil {
