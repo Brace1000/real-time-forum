@@ -174,7 +174,8 @@ function handleLogin() {
         body: JSON.stringify({
             identifier: identifier,
             password: password
-        })
+        }),
+        credentials: 'include' // Important for cookies
     })
     .then(async response => {
         // Reset button state
@@ -198,12 +199,23 @@ function handleLogin() {
     })
     .then(data => {
         if (data.success && data.authenticated) {
+            // Store authentication status and user data
             localStorage.setItem('isAuthenticated', 'true');
+            
+            // Store the token if provided in response
+            if (data.token) {
+                localStorage.setItem('auth_token', data.token);
+            }
+            
             if (data.user) {
                 localStorage.setItem('user', JSON.stringify(data.user));
             }
+            
             updateAuthUI();
             showPage('home');
+            
+            // Initialize chat after successful login
+            initializeChat();
         } else {
             throw new Error('Authentication failed');
         }
@@ -437,8 +449,13 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 // Handle logout
 function handleLogout() {
-  console.log('User logged out');
-  localStorage.removeItem('isAuthenticated');
-  updateAuthUI();
-  showPage('home');
+    cleanupChat(); // Add this line
+    localStorage.removeItem('isAuthenticated');
+    localStorage.removeItem('auth_token');
+    localStorage.removeUser('user');
+    updateAuthUI();
+    showPage('home');
 }
+console.log("After login - isAuthenticated:", localStorage.getItem('isAuthenticated'));
+console.log("After login - auth_token:", localStorage.getItem('auth_token'));
+console.log("After login - user:", localStorage.getItem('user'));
