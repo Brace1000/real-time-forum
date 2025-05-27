@@ -20,18 +20,15 @@ func main() {
 	// Set up API routes
 	http.HandleFunc("/api/categories", handlers.GetCategoriesHandler)
 	http.HandleFunc("/post/create", handlers.CreatePostHandler)
-	http.HandleFunc("/login", handlers.LoginHandler)
+	http.HandleFunc("/login", recoverMiddleware(handlers.LoginHandler))
 	http.HandleFunc("/register", recoverMiddleware(handlers.RegisterHandler))
+	http.HandleFunc("/ws", handlers.HandleWebSocket)
 	
-	// WebSocket endpoint - this was missing
-	http.HandleFunc("/ws", auth.AuthMiddleware(handlers.HandleWebSocket))
-	
-	// Message history endpoint
+	// Chat-related endpoints
 	http.HandleFunc("/api/messages/", auth.AuthMiddleware(handlers.GetMessageHistory))
-	
-	// Online users endpoint
-	//http.HandleFunc("/api/users/online", auth.AuthMiddleware(handlers.GetOnlineUsersHandler))
-	
+	http.HandleFunc("/api/users/online", auth.AuthMiddleware(handlers.GetOnlineUsersHandler))
+	http.HandleFunc("/api/chats", auth.AuthMiddleware(handlers.GetUserChatsHandler))
+
 	// Serve static files
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
