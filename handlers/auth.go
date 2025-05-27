@@ -152,19 +152,21 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		Expires:  expiresAt,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	// Successful login response
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"success":       true,
 		"authenticated": true,
+		"token":         sessionID,
 		"user": map[string]string{
 			"id":       strconv.Itoa(userID),
 			"username": username,
 			"email":    email,
 		},
-	})
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
