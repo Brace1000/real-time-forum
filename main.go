@@ -1,3 +1,4 @@
+// main.go
 package main
 
 import (
@@ -7,7 +8,6 @@ import (
 
 	"real/db"
 	"real/handlers"
-	"real/auth" // Assuming this exists
 )
 
 func main() {
@@ -19,19 +19,16 @@ func main() {
 
 	// Set up API routes
 	http.HandleFunc("/api/categories", handlers.GetCategoriesHandler)
+	http.HandleFunc("/api/posts", handlers.GetPostsHandler) // Add this line
 	http.HandleFunc("/post/create", handlers.CreatePostHandler)
 	http.HandleFunc("/login", recoverMiddleware(handlers.LoginHandler))
 	http.HandleFunc("/register", recoverMiddleware(handlers.RegisterHandler))
-	http.HandleFunc("/ws", handlers.HandleWebSocket)
 	
-	// Chat-related endpoints
-	http.HandleFunc("/api/messages/", auth.AuthMiddleware(handlers.GetMessageHistory))
-	http.HandleFunc("/api/users/online", auth.AuthMiddleware(handlers.GetOnlineUsersHandler))
-	http.HandleFunc("/api/chats", auth.AuthMiddleware(handlers.GetUserChatsHandler))
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
+	http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("./static/images"))))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// If it's not an actual file/resource being requested, serve the SPA
@@ -47,8 +44,8 @@ func main() {
 	})
 
 	// Start server
-	log.Println("Server started at http://localhost:8081")
-	log.Fatal(http.ListenAndServe(":8081", nil))
+	log.Println("Server started at http://localhost:8085")
+	log.Fatal(http.ListenAndServe(":8085", nil))
 }
 
 func recoverMiddleware(next http.HandlerFunc) http.HandlerFunc {
