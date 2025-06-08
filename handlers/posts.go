@@ -17,17 +17,12 @@ import (
 )
 
 func CreatePostHandler(w http.ResponseWriter, r *http.Request) {
-	// Authentication check
-	userID, ok := auth.GetUserID(r)
-	if !ok || userID == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	 userID, ok := auth.GetUserID(r)
+	 log.Printf("Auth check - userID: %s, ok: %v", userID, ok)
+	 if !ok || userID == "" {
+		 http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		 return
+	 }
 
 	// Parse form with file upload
 	if err := r.ParseMultipartForm(20 << 20); err != nil { // 20MB max
@@ -108,6 +103,7 @@ func CreatePostHandler(w http.ResponseWriter, r *http.Request) {
 	// Insert post
 	var result sql.Result
 	if imgURL != "" {
+		
 		result, err = tx.Exec(
 			"INSERT INTO posts (user_id, title, content, imgurl) VALUES (?, ?, ?, ?)",
 			userID, title, content, imgURL,
