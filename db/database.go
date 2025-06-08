@@ -94,7 +94,6 @@ func ScheduleSessionCleanup(interval time.Duration, cleanupFunc func() error) {
 	}
 }
 
-// In db/db.go
 func GetUser(userID int) ([]string, error) {
 	var username, bio, profilePicture string
 	qry := `SELECT username, COALESCE(bio, ""), COALESCE(profile_picture, "") 
