@@ -204,46 +204,68 @@
 
 </section>
 
-      <!-- Create Post Page -->
-      <section id="create-post-page" class="page-section">
-        <div class="content-header">
-          <h2>Create New Post</h2>
-          <button id="cancel-post-btn" class="secondary-btn">Cancel</button>
-        </div>
-        <form id="create-post-form" class="post-form">
-          <div class="form-group">
-            <label>Title</label>
-            <input type="text" id="post-title" class="form-input" required placeholder="What's your post about?" />
-          </div>
-
-          <div class="form-group">
-            <label>Content</label>
-            <textarea id="post-content" rows="8" class="form-textarea" required placeholder="Share your thoughts..."></textarea>
-          </div>
-
-          <div class="form-group">
-            <label>Categories (Select up to 3)</label>
-            <div id="categories-container" class="categories-selector"></div>
-          </div>
-
-          <div class="form-group">
-            <label>Image (optional)</label>
-            <div class="file-upload">
-              <label for="post-image" class="file-upload-label">
-                <i class="fas fa-cloud-upload-alt"></i>
-                <span>Choose an image</span>
-              </label>
-              <input type="file" id="post-image" accept="image/*" />
-              <div id="file-name" class="file-name">No file selected</div>
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button type="submit" class="primary-btn full-width">Publish Post</button>
-          </div>
-        </form>
-      </section>
-    </section>
+<section id="create-post-page" class="page-section">
+  <div class="content-header">
+    <h2>Create New Post</h2>
+    <button id="cancel-post-btn" class="secondary-btn">Cancel</button>
+  </div>
+  
+  <!-- CRITICAL FIX: Added 'name' attributes and enctype -->
+  <form id="create-post-form" class="post-form" enctype="multipart/form-data">
+    <div class="form-group">
+      <label for="post-title">Title</label>
+      <input 
+        type="text" 
+        id="post-title" 
+        name="title"
+        class="form-input" 
+        required 
+        placeholder="What's your post about?" 
+      />
+    </div>
+    
+    <div class="form-group">
+      <label for="post-content">Content</label>
+      <textarea 
+        id="post-content" 
+        name="content"
+        rows="8" 
+        class="form-textarea" 
+        required 
+        placeholder="Share your thoughts..."
+      ></textarea>
+    </div>
+    
+    <div class="form-group">
+      <label>Categories (Select up to 3)</label>
+      <div id="categories-container" class="categories-selector">
+        
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label for="post-image">Image (optional)</label>
+      <div class="file-upload">
+        <label for="post-image" class="file-upload-label">
+          <i class="fas fa-cloud-upload-alt"></i>
+          <span>Choose an image</span>
+        </label>
+        <!-- CRITICAL FIX: Added name="img" to match your Go handler -->
+        <input 
+          type="file" 
+          id="post-image" 
+          name="img"
+          accept="image/*" 
+        />
+        <div id="file-name" class="file-name">No file selected</div>
+      </div>
+    </div>
+    
+    <div class="form-actions">
+      <button type="submit" class="primary-btn full-width">Publish Post</button>
+    </div>
+  </form>
+</section>
 
     <!-- Chat Sidebar -->
     <aside id="private-chat-container" class="chat-sidebar">
