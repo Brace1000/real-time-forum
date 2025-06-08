@@ -776,3 +776,23 @@ a {
     width: 100%;
   }
 }
+/* Add this to your existing CSS file */
+
+.post-actions .action-btn {
+  /* your existing styles for buttons */
+  transition: color 0.2s ease-in-out, transform 0.2s ease;
+}
+
+/* Style for when a button is selected by the user */
+.post-actions .action-btn.active {
+  color: #007bff; /* A highlight color, e.g., blue */
+  transform: scale(1.1);
+}
+
+.post-actions .like-btn.active {
+  color: #28a745; /* Green for like */
+}
+
+.post-actions .dislike-btn.active {
+  color: #dc3545; /* Red for dislike */
+}
