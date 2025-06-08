@@ -18,10 +18,11 @@ func main() {
 
 	// Set up API routes
 	http.HandleFunc("/api/categories", handlers.GetCategoriesHandler)
-	http.HandleFunc("/api/posts", handlers.GetPostsHandler) // Add this line
+	http.HandleFunc("/api/posts", handlers.GetPostsHandler) 
 	http.HandleFunc("/post/create", handlers.CreatePostHandler)
 	http.HandleFunc("/login", recoverMiddleware(handlers.LoginHandler))
 	http.HandleFunc("/register", recoverMiddleware(handlers.RegisterHandler))
+	http.HandleFunc("/like", handlers.LikeHandler)
 	// Serve static files
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
