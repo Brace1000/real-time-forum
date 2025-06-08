@@ -117,6 +117,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+   	// Convert userID to string for session
 
 	// Create new session
 	sessionID := uuid.New().String()
