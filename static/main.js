@@ -1,9 +1,9 @@
-// main.js
+
 
 document.addEventListener('DOMContentLoaded', function () {
   showPage('home');
   setupNavigation();
-  setupForms(); // Call once initially
+  setupForms(); 
   updateAuthUI();
   if (isLoggedIn()) {
     initializeChat();
@@ -33,6 +33,10 @@ function showPage(pageId) {
           setupForms();
           page.dataset.initialized = 'true';
       }
+      if (pageId === 'home') {
+        loadPosts();
+    }
+
   } else {
       console.error(`Page with ID "${pageId}-page" not found!`);
   }
@@ -175,7 +179,7 @@ function handleLogin() {
             identifier: identifier,
             password: password
         }),
-        credentials: 'include' // Important for cookies
+        credentials: 'include' 
     })
     .then(async response => {
         // Reset button state
@@ -216,6 +220,7 @@ function handleLogin() {
             
             // Initialize chat after successful login
             initializeChat();
+            loadPosts();
         } else {
             throw new Error('Authentication failed');
         }
@@ -228,7 +233,7 @@ function handleLogin() {
 // Handle registration
 async function handleRegister() {
     console.log('handleRegister called');
-console.trace(); // This will show where the function was called from
+console.trace(); 
     try {
         const form = document.getElementById('register-form');
         if (!form) {
@@ -236,10 +241,10 @@ console.trace(); // This will show where the function was called from
             return;
         }
 
-        // This MUST come first - before any usage of formData
+        //
         const formData = new FormData(form);
 
-        // Debugging: Log form data
+        
         console.log("Form Data Entries:");
         for (let [key, value] of formData.entries()) {
             console.log(key, value);
@@ -358,7 +363,7 @@ async function loadCategories() {
 async function handleCreatePost() {
     // Check authentication more thoroughly
     const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-    const user = JSON.parse(localStorage.getItem('user') )
+    const user = JSON.parse(localStorage.getItem('user')  || {});
     
     if (!isAuthenticated || !user.id) {
         alert('Please login to create posts');
@@ -392,18 +397,12 @@ async function handleCreatePost() {
     submitBtn.textContent = 'Posting...';
 
     try {
-        // Get session cookie
-        const cookies = document.cookie;
-        const sessionCookie = cookies.split('; ')
-            .find(row => row.startsWith('session_id='));
-        
         const response = await fetch('/post/create', {
             method: 'POST',
             body: formData,
             credentials: 'include', // This sends cookies with the request
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`, // If using JWT
-                'Cookie': sessionCookie // Send session cookie explicitly
+               'Authorization': `Bearer ${localStorage.getItem('auth_token')}`, // If using JWT
             }
         });
 
@@ -417,6 +416,8 @@ async function handleCreatePost() {
             form.reset();
             alert('Post created successfully!');
             showPage('home');
+            // Reload posts to show the new one
+            loadPosts();
         } else {
             throw new Error(data.message || 'Post creation failed');
         }
@@ -429,13 +430,187 @@ async function handleCreatePost() {
     }
 }
 
+async function loadPosts(filters = {}) {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters.category) queryParams.append('category', filters.category);
+        if (filters.myPostsOnly) queryParams.append('my_posts_only', 'true');
+        if (filters.likedPostsOnly) queryParams.append('liked_posts_only', 'true');
+        
+        const response = await fetch(`/api/posts?${queryParams.toString()}`, {
+            credentials: 'include',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error("Response is not JSON");
+        }
+
+        const posts = await response.json();
+        displayPosts(posts);
+        
+    } catch (error) {
+        console.error('Error loading posts:', error);
+        const container = document.getElementById('posts-container');
+        if (container) {
+            container.innerHTML = `
+                <div class="error">
+                    Failed to load posts. 
+                    <button onclick="loadPosts()">Retry</button>
+                </div>
+            `;
+        }
+    }
+}
+// NEW FUNCTION: Display posts in the UI
+function displayPosts(posts) {
+    const container = document.getElementById('posts-container');
+    if (!container) return;
+    {posts.image_url ? `<img src="${post.image_url}" alt="Post image" class="post-image" />` : ''}
+
+    if (!posts || posts.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-comments"></i>
+                <h3>No posts yet</h3>
+                <p>Be the first to start a discussion!</p>
+                <button onclick="showPage('create-post')" class="primary-btn">Create Post</button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = posts.map(post => `
+        <article class="post-card" data-post-id="${post.post_id}">
+            <div class="post-header">
+                <div class="post-author">
+                    <div class="author-avatar">${post.first_name ? post.first_name[0].toUpperCase() : 'U'}</div>
+                    <div class="author-info">
+                        <h4>${post.first_name || 'Unknown'} ${post.last_name || 'User'}</h4>
+                        <span class="post-time">${formatDate(post.created_at)}</span>
+                    </div>
+                </div>
+                ${isOwnPost(post.user_id) ? `
+                    <div class="post-actions">
+                        <button class="action-btn edit-post" onclick="editPost(${post.post_id})">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="action-btn delete-post" onclick="deletePost(${post.post_id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+            
+            <div class="post-content">
+                <h3 class="post-title">${escapeHtml(post.title)}</h3>
+                <p class="post-text">${escapeHtml(post.content)}</p>
+                ${post.image_url ? `<img src="${post.image_url}" alt="Post image" class="post-image" />` : ''}
+            </div>
+            
+            <div class="post-categories">
+                ${post.categories ? post.categories.split(',').map(cat => 
+                    `<span class="category-tag">${escapeHtml(cat.trim())}</span>`
+                ).join('') : ''}
+            </div>
+            
+            <div class="post-footer">
+                <div class="post-stats">
+                    <button class="stat-btn like-btn ${post.user_liked ? 'liked' : ''}" 
+                            onclick="toggleLike(${post.post_id})">
+                        <i class="fas fa-heart"></i>
+                        <span>${post.like_count || 0}</span>
+                    </button>
+                    <button class="stat-btn comment-btn" onclick="showComments(${post.post_id})">
+                        <i class="fas fa-comment"></i>
+                        <span>${post.comment_count || 0}</span>
+                    </button>
+                </div>
+            </div>
+        </article>
+    `).join('');
+}
+
+// Helper function to check if post belongs to current user
+function isOwnPost(postUserId) {
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    return currentUser.id && currentUser.id === postUserId;
+}
+
+// Helper function to format dates
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
+    
+    return date.toLocaleDateString();
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// NEW FUNCTION: Toggle like on a post
+async function toggleLike(postId) {
+    if (!isLoggedIn()) {
+        alert('Please login to like posts');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/posts/${postId}/like`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to toggle like');
+        }
+
+        const data = await response.json();
+        
+        // Update the like button and count in the UI
+        const likeBtn = document.querySelector(`[data-post-id="${postId}"] .like-btn`);
+        if (likeBtn) {
+            likeBtn.classList.toggle('liked', data.liked);
+            const countSpan = likeBtn.querySelector('span');
+            if (countSpan) {
+                countSpan.textContent = data.like_count || 0;
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error toggling like:', error);
+        alert('Failed to update like. Please try again.');
+    }
+}
+
+
 // Update your DOMContentLoaded event listener
 document.addEventListener('DOMContentLoaded', function() {
     showPage('home');
     setupNavigation();
     setupForms();
     updateAuthUI();
-    loadCategories(); // Load categories when page loads
+    loadCategories(); 
+    loadPosts();
+    
     
     // Add this to your existing setupForms function
     const createPostForm = document.getElementById('create-post-form');
@@ -459,3 +634,4 @@ function handleLogout() {
 console.log("After login - isAuthenticated:", localStorage.getItem('isAuthenticated'));
 console.log("After login - auth_token:", localStorage.getItem('auth_token'));
 console.log("After login - user:", localStorage.getItem('user'));
+
