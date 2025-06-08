@@ -5,9 +5,9 @@ document.addEventListener('DOMContentLoaded', function () {
   setupNavigation();
   setupForms(); 
   updateAuthUI();
-  if (isLoggedIn()) {
-    initializeChat();
-}
+//   if (isLoggedIn()) {
+//     initializeChat();
+// }
 });
 function isLoggedIn() {
     return localStorage.getItem('isAuthenticated') === 'true';
@@ -470,10 +470,10 @@ async function loadPosts(filters = {}) {
     }
 }
 // NEW FUNCTION: Display posts in the UI
+// REPLACEMENT for your displayPosts function
 function displayPosts(posts) {
     const container = document.getElementById('posts-container');
     if (!container) return;
-    {posts.image_url ? `<img src="${post.image_url}" alt="Post image" class="post-image" />` : ''}
 
     if (!posts || posts.length === 0) {
         container.innerHTML = `
@@ -498,13 +498,9 @@ function displayPosts(posts) {
                     </div>
                 </div>
                 ${isOwnPost(post.user_id) ? `
-                    <div class="post-actions">
-                        <button class="action-btn edit-post" onclick="editPost(${post.post_id})">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="action-btn delete-post" onclick="deletePost(${post.post_id})">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                    <div class="post-menu">
+                        <button class="action-btn edit-post" onclick="editPost(${post.post_id})"><i class="fas fa-edit"></i></button>
+                        <button class="action-btn delete-post" onclick="deletePost(${post.post_id})"><i class="fas fa-trash"></i></button>
                     </div>
                 ` : ''}
             </div>
@@ -523,12 +519,19 @@ function displayPosts(posts) {
             
             <div class="post-footer">
                 <div class="post-stats">
-                    <button class="stat-btn like-btn ${post.user_liked ? 'liked' : ''}" 
-                            onclick="toggleLike(${post.post_id})">
-                        <i class="fas fa-heart"></i>
-                        <span>${post.like_count || 0}</span>
+                    <button class="action-btn like-btn ${post.user_reaction === 'like' ? 'active' : ''}" 
+                            onclick="handleReaction(${post.post_id}, 'like')">
+                        <i class="fas fa-thumbs-up"></i>
+                        <span class="like-count">${post.likes || 0}</span>
                     </button>
-                    <button class="stat-btn comment-btn" onclick="showComments(${post.post_id})">
+                    
+                    <button class="action-btn dislike-btn ${post.user_reaction === 'dislike' ? 'active' : ''}" 
+                            onclick="handleReaction(${post.post_id}, 'dislike')">
+                        <i class="fas fa-thumbs-down"></i>
+                        <span class="dislike-count">${post.dislikes || 0}</span>
+                    </button>
+
+                    <button class="action-btn comment-btn" onclick="showComments(${post.post_id})">
                         <i class="fas fa-comment"></i>
                         <span>${post.comment_count || 0}</span>
                     </button>
@@ -538,11 +541,112 @@ function displayPosts(posts) {
     `).join('');
 }
 
-// Helper function to check if post belongs to current user
+
+
+async function handleReaction(postId, reactionType) {
+    if (!isLoggedIn()) { 
+        alert('Please login to react to posts');
+        return;
+    }
+
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    // user.id is the source of the string.
+    const userId = user.id; 
+    
+    if (!userId) {
+        alert('User information not found. Please log in again.');
+        return;
+    }
+
+    // --- THIS IS THE CRITICAL SECTION ---
+    const numericUserId = parseInt(userId, 10);
+    const numericPostId = parseInt(postId, 10);
+    
+    if (isNaN(numericUserId) || isNaN(numericPostId)) {
+        console.error("Invalid IDs after parsing:", { userId, postId });
+        return;
+    }
+
+    // This console log in your BROWSER will confirm what's being sent.
+    console.log("Preparing to send this payload:", {
+        user_id: numericUserId,
+        post_id: numericPostId,
+        like_type: reactionType
+    });
+
+    try {
+        const response = await fetch("/like", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            // Ensure you are using the NUMERIC variables here.
+            body: JSON.stringify({
+                user_id: numericUserId,
+                post_id: numericPostId,
+                like_type: reactionType
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to process reaction');
+        }
+
+        const data = await response.json();
+        updatePostReactionsUI(numericPostId, data);
+        
+    } catch (error) {
+        console.error(`Error handling ${reactionType}:`, error);
+        alert(error.message || 'An error occurred. Please try again.');
+    }
+}
+function updatePostReactionsUI(postId, data) {
+    // Find the specific post card using the data attribute
+    const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+    if (!postCard) {
+        console.warn(`Could not find post card with ID: ${postId}`);
+        return;
+    }
+
+    // Find all the necessary elements within that specific post
+    const likeBtn = postCard.querySelector('.like-btn');
+    const dislikeBtn = postCard.querySelector('.dislike-btn');
+    const likeCountSpan = postCard.querySelector('.like-count');
+    const dislikeCountSpan = postCard.querySelector('.dislike-count');
+
+    // Check if all elements were found
+    if (!likeBtn || !dislikeBtn || !likeCountSpan || !dislikeCountSpan) {
+        console.error('Could not find all reaction UI elements in post card:', postId);
+        return;
+    }
+
+    
+    likeCountSpan.textContent = data.likes || 0;
+    dislikeCountSpan.textContent = data.dislikes || 0;
+
+    
+    likeBtn.classList.remove('active');
+    dislikeBtn.classList.remove('active');
+
+    
+    if (data.userReaction === 'like') {
+        
+        likeBtn.classList.add('active');
+    } else if (data.userReaction === 'dislike') {
+
+        dislikeBtn.classList.add('active');
+    }
+    
+}
+
+
+// --- HELPER FUNCTIONS ---
+
 function isOwnPost(postUserId) {
     const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
     return currentUser.id && currentUser.id === postUserId;
 }
+
 
 // Helper function to format dates
 function formatDate(dateString) {
@@ -567,40 +671,88 @@ function escapeHtml(text) {
 }
 
 // NEW FUNCTION: Toggle like on a post
-async function toggleLike(postId) {
-    if (!isLoggedIn()) {
-        alert('Please login to like posts');
+// A more generic function to handle both likes and dislikes
+async function handleReaction(postId, reactionType) {
+    // Check if user is logged in (your existing isLoggedIn function)
+    if (!isLoggedIn()) { 
+        alert('Please login to react to posts');
+        return;
+    }
+
+    const user = JSON.parse(localStorage.getItem('user') || {});
+    const userId = user.id;
+    
+    if (!userId) {
+        alert('User information not found. Please log in again.');
         return;
     }
 
     try {
-        const response = await fetch(`/api/posts/${postId}/like`, {
+        const response = await fetch("/like", {
             method: 'POST',
-            credentials: 'include'
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            // The body now correctly sends the reaction type from the button click
+            body: JSON.stringify({
+                user_id: userId,
+                post_id: postId,
+                like_type: reactionType // 'like' or 'dislike'
+            })
         });
 
         if (!response.ok) {
-            throw new Error('Failed to toggle like');
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to process reaction');
         }
 
         const data = await response.json();
         
-        // Update the like button and count in the UI
-        const likeBtn = document.querySelector(`[data-post-id="${postId}"] .like-btn`);
-        if (likeBtn) {
-            likeBtn.classList.toggle('liked', data.liked);
-            const countSpan = likeBtn.querySelector('span');
-            if (countSpan) {
-                countSpan.textContent = data.like_count || 0;
-            }
-        }
+        // --- UI UPDATE LOGIC ---
+        updatePostReactionsUI(postId, data);
         
     } catch (error) {
-        console.error('Error toggling like:', error);
-        alert('Failed to update like. Please try again.');
+        console.error(`Error handling ${reactionType}:`, error);
+        alert(error.message || 'An error occurred. Please try again.');
     }
 }
 
+// A dedicated function to update the UI, keeping the code clean
+function updatePostReactionsUI(postId, data) {
+    // Find the specific post card using the data attribute
+    const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+    if (!postCard) {
+        console.warn(`Could not find post card with ID: ${postId}`);
+        return;
+    }
+
+    // Find the buttons and count spans within that specific post
+    const likeBtn = postCard.querySelector('.like-btn');
+    const dislikeBtn = postCard.querySelector('.dislike-btn');
+    const likeCountSpan = postCard.querySelector('.like-count');
+    const dislikeCountSpan = postCard.querySelector('.dislike-count');
+
+    if (!likeBtn || !dislikeBtn || !likeCountSpan || !dislikeCountSpan) {
+        console.error('UI elements for reactions not found in post card:', postId);
+        return;
+    }
+
+    // Update counts
+    likeCountSpan.textContent = data.likes || 0;
+    dislikeCountSpan.textContent = data.dislikes || 0;
+
+    // Update button styles based on the user's current reaction
+    // Remove existing states first
+    likeBtn.classList.remove('active');
+    dislikeBtn.classList.remove('active');
+
+    if (data.userReaction === 'like') {
+        likeBtn.classList.add('active');
+    } else if (data.userReaction === 'dislike') {
+        dislikeBtn.classList.add('active');
+    }
+}
 
 // Update your DOMContentLoaded event listener
 document.addEventListener('DOMContentLoaded', function() {
@@ -631,7 +783,4 @@ function handleLogout() {
     updateAuthUI();
     showPage('home');
 }
-console.log("After login - isAuthenticated:", localStorage.getItem('isAuthenticated'));
-console.log("After login - auth_token:", localStorage.getItem('auth_token'));
-console.log("After login - user:", localStorage.getItem('user'));
 
