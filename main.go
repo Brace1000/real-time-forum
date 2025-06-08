@@ -11,7 +11,6 @@ import (
 )
 
 func main() {
-	// Initialize database
 	if err := db.Init("./forum.db"); err != nil {
 		log.Fatalf("Database initialization failed: %v", err)
 	}
@@ -23,17 +22,13 @@ func main() {
 	http.HandleFunc("/post/create", handlers.CreatePostHandler)
 	http.HandleFunc("/login", recoverMiddleware(handlers.LoginHandler))
 	http.HandleFunc("/register", recoverMiddleware(handlers.RegisterHandler))
-	
-
 	// Serve static files
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 	http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("./static/images"))))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// If it's not an actual file/resource being requested, serve the SPA
 		if r.URL.Path != "/" && r.URL.Path != "/index.html" {
-			// Check if the file exists
 			if _, err := http.Dir("./static").Open(r.URL.Path); err != nil {
 				http.ServeFile(w, r, "./static/index.html")
 				return
