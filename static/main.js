@@ -490,6 +490,7 @@ function displayPosts(posts) {
     container.innerHTML = posts.map(post => `
         <article class="post-card" data-post-id="${post.post_id}">
             <div class="post-header">
+                <!-- ... your existing post header ... -->
                 <div class="post-author">
                     <div class="author-avatar">${post.first_name ? post.first_name[0].toUpperCase() : 'U'}</div>
                     <div class="author-info">
@@ -497,46 +498,52 @@ function displayPosts(posts) {
                         <span class="post-time">${formatDate(post.created_at)}</span>
                     </div>
                 </div>
-                ${isOwnPost(post.user_id) ? `
-                    <div class="post-menu">
-                        <button class="action-btn edit-post" onclick="editPost(${post.post_id})"><i class="fas fa-edit"></i></button>
-                        <button class="action-btn delete-post" onclick="deletePost(${post.post_id})"><i class="fas fa-trash"></i></button>
-                    </div>
-                ` : ''}
             </div>
             
             <div class="post-content">
+                <!-- ... your existing post content ... -->
                 <h3 class="post-title">${escapeHtml(post.title)}</h3>
                 <p class="post-text">${escapeHtml(post.content)}</p>
-                ${post.image_url ? `<img src="${post.image_url}" alt="Post image" class="post-image" />` : ''}
-            </div>
-            
-            <div class="post-categories">
-                ${post.categories ? post.categories.split(',').map(cat => 
-                    `<span class="category-tag">${escapeHtml(cat.trim())}</span>`
-                ).join('') : ''}
             </div>
             
             <div class="post-footer">
                 <div class="post-stats">
+                    <!-- ... your existing like/dislike buttons ... -->
                     <button class="action-btn like-btn ${post.user_reaction === 'like' ? 'active' : ''}" 
                             onclick="handleReaction(${post.post_id}, 'like')">
                         <i class="fas fa-thumbs-up"></i>
                         <span class="like-count">${post.likes || 0}</span>
                     </button>
-                    
                     <button class="action-btn dislike-btn ${post.user_reaction === 'dislike' ? 'active' : ''}" 
                             onclick="handleReaction(${post.post_id}, 'dislike')">
                         <i class="fas fa-thumbs-down"></i>
                         <span class="dislike-count">${post.dislikes || 0}</span>
                     </button>
-
+                    
+                    <!-- This button is correct -->
                     <button class="action-btn comment-btn" onclick="showComments(${post.post_id})">
                         <i class="fas fa-comment"></i>
                         <span>${post.comment_count || 0}</span>
                     </button>
                 </div>
             </div>
+
+            <!-- ======================================================= -->
+            <!-- === THIS IS THE DIV THAT WAS MISSING === -->
+            <!-- ======================================================= -->
+            <div class="comment-section-wrapper" id="comments-wrapper-for-post-${post.post_id}" style="display: none;">
+                <div class="comment-list" id="comment-list-for-post-${post.post_id}">
+                    <!-- Comments will appear here when loaded -->
+                </div>
+                <form class="comment-form" onsubmit="handleCreateComment(event, ${post.post_id})">
+                    <input type="text" name="content" class="comment-input" placeholder="Add a comment..." required>
+                    <button type="submit" class="comment-submit-btn">Post</button>
+                </form>
+            </div>
+            <!-- ======================================================= -->
+            <!-- === END OF THE MISSING DIV === -->
+            <!-- ======================================================= -->
+
         </article>
     `).join('');
 }
@@ -550,38 +557,28 @@ async function handleReaction(postId, reactionType) {
     }
 
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    // user.id is the source of the string.
-    const userId = user.id; 
+    // Ensure userId is a number
+    const userId = parseInt(user.id, 10);
     
-    if (!userId) {
+    if (!userId || isNaN(userId)) {
         alert('User information not found. Please log in again.');
         return;
     }
 
-    // --- THIS IS THE CRITICAL SECTION ---
-    const numericUserId = parseInt(userId, 10);
+    // Ensure postId is a number
     const numericPostId = parseInt(postId, 10);
-    
-    if (isNaN(numericUserId) || isNaN(numericPostId)) {
-        console.error("Invalid IDs after parsing:", { userId, postId });
+    if (isNaN(numericPostId)) {
+        console.error("Invalid post ID:", postId);
         return;
     }
-
-    // This console log in your BROWSER will confirm what's being sent.
-    console.log("Preparing to send this payload:", {
-        user_id: numericUserId,
-        post_id: numericPostId,
-        like_type: reactionType
-    });
 
     try {
         const response = await fetch("/like", {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            // Ensure you are using the NUMERIC variables here.
             body: JSON.stringify({
-                user_id: numericUserId,
+                user_id: userId,
                 post_id: numericPostId,
                 like_type: reactionType
             })
@@ -637,6 +634,171 @@ function updatePostReactionsUI(postId, data) {
         dislikeBtn.classList.add('active');
     }
     
+}
+// This function toggles the comment section visibility
+function showComments(postId) {
+    // Log that the function was called and which post it's for.
+    console.log(`Toggling comments for post ID: ${postId}`);
+
+    // Find the specific wrapper for this post.
+    const wrapper = document.getElementById(`comments-wrapper-for-post-${postId}`);
+    
+    // Check if we even found the wrapper.
+    if (!wrapper) {
+        console.error(`Could not find the comment wrapper for post ID: ${postId}. Check your HTML IDs.`);
+        return;
+    }
+
+    // Check its current display state.
+    const isVisible = wrapper.style.display === 'block';
+    console.log(`Wrapper is currently visible? ${isVisible}`);
+
+    // Toggle the display style.
+    if (isVisible) {
+        wrapper.style.display = 'none';
+        console.log('Hiding comments.');
+    } else {
+        wrapper.style.display = 'block';
+        console.log('Showing comments.');
+        
+        // If we are showing it, maybe we need to load the comments.
+        // This is where you would call a function like `loadCommentsForPost(postId)`.
+        // We can add this functionality later. For now, just showing the form is the goal.
+    }
+}
+
+// Handles submitting the new comment form
+// Add console.log statements to trace the execution
+async function handleCreateComment(event, postId) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const input = form.querySelector('input[name="content"]');
+    const content = input.value.trim();
+
+    if (!content) {
+        alert('Please enter a comment');
+        return;
+    }
+
+    try {
+        const response = await fetch('/comment/create', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            credentials: 'include',
+            body: new URLSearchParams({
+                'post_id': postId,
+                'content': content
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to post comment');
+        }
+
+        const newComment = await response.json();
+        addCommentToUI(newComment);
+        input.value = '';
+
+    } catch (error) {
+        console.error('Error posting comment:', error);
+        alert(error.message || 'Failed to post comment');
+    }
+}
+// Renders a single new comment and prepends it to the list
+function addCommentToUI(comment) {
+    const list = document.getElementById(`comment-list-for-post-${comment.post_id}`);
+    if (!list) return;
+
+    const commentEl = document.createElement('div');
+    commentEl.className = 'comment';
+    commentEl.setAttribute('data-comment-id', comment.comment_id);
+    commentEl.innerHTML = `
+        <p class="comment-author">${comment.author || 'You'}</p>
+        <p class="comment-content">${escapeHtml(comment.content)}</p>
+        <div class="comment-actions">
+            <button class="action-btn like-btn" onclick="handleCommentReaction(${comment.comment_id}, 'like')">
+                <i class="fas fa-thumbs-up"></i> <span class="like-count">${comment.likes || 0}</span>
+            </button>
+            <button class="action-btn dislike-btn" onclick="handleCommentReaction(${comment.comment_id}, 'dislike')">
+                <i class="fas fa-thumbs-down"></i> <span class="dislike-count">${comment.dislikes || 0}</span>
+            </button>
+        </div>
+    `;
+    list.prepend(commentEl);
+}
+// A new reaction handler specifically for comments
+async function handleCommentReaction(commentId, reactionType) {
+    if (!isLoggedIn()) { 
+        alert('Please login to react to comments');
+        return;
+    }
+
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    // Ensure userId is a number
+    const userId = parseInt(user.id, 10);
+    if (!userId || isNaN(userId)) { 
+        alert('User information not found. Please log in again.');
+        return;
+    }
+
+    // Ensure commentId is a number
+    const numericCommentId = parseInt(commentId, 10);
+    if (isNaN(numericCommentId)) {
+        console.error("Invalid comment ID:", commentId);
+        return;
+    }
+
+    try {
+        const response = await fetch("/like", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                user_id: userId,
+                comment_id: numericCommentId,
+                like_type: reactionType
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to process reaction');
+        }
+        
+        const data = await response.json();
+        updateCommentReactionsUI(numericCommentId, data);
+
+    } catch (error) {
+        console.error(`Error handling comment ${reactionType}:`, error);
+        alert(error.message || 'Failed to process reaction');
+    }
+}
+
+// A new UI updater for comments
+function updateCommentReactionsUI(commentId, data) {
+    const commentEl = document.querySelector(`.comment[data-comment-id="${commentId}"]`);
+    if (!commentEl) return;
+
+    const likeCountSpan = commentEl.querySelector('.like-count');
+    const dislikeCountSpan = commentEl.querySelector('.dislike-count');
+    const likeBtn = commentEl.querySelector('.like-btn');
+    const dislikeBtn = commentEl.querySelector('.dislike-btn');
+
+    likeCountSpan.textContent = data.likes || 0;
+    dislikeCountSpan.textContent = data.dislikes || 0;
+
+    likeBtn.classList.remove('active');
+    dislikeBtn.classList.remove('active');
+
+    if (data.userReaction === 'like') {
+        likeBtn.classList.add('active');
+    } else if (data.userReaction === 'dislike') {
+        dislikeBtn.classList.add('active');
+    }
 }
 
 
