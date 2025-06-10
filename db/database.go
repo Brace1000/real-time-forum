@@ -21,7 +21,7 @@ func Init(dbPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %v", err)
 	}
-	log.Println("Database connection established")
+	
 
 	if err = createTables(); err != nil {
 		return fmt.Errorf("failed to create tables: %v", err)
@@ -30,7 +30,7 @@ func Init(dbPath string) error {
 	if err = createCategories(); err != nil {
 		return fmt.Errorf("failed to create categories: %v", err)
 	}
-	log.Println("Categories initialized successfully")
+	
 	// Start session cleanup scheduler
 	go ScheduleSessionCleanup(1*time.Hour, CleanupExpiredSessions)
 
