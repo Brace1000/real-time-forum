@@ -24,6 +24,7 @@ func main() {
 	http.HandleFunc("/register", recoverMiddleware(handlers.RegisterHandler))
 	http.HandleFunc("/like", handlers.LikeHandler)
 	http.HandleFunc("/comment/create",handlers.CreateCommentHandler)
+	http.HandleFunc("/comment/like",handlers.CommentReactionHandler)
 	// Serve static files
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
@@ -41,8 +42,8 @@ func main() {
 	})
 
 	// Start server
-	log.Println("Server started at http://localhost:8088")
-	log.Fatal(http.ListenAndServe(":8088", nil))
+	log.Println("Server started at http://localhost:8000")
+	log.Fatal(http.ListenAndServe(":8000", nil))
 }
 
 func recoverMiddleware(next http.HandlerFunc) http.HandlerFunc {
