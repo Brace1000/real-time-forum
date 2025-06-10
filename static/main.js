@@ -731,6 +731,7 @@ function addCommentToUI(comment) {
     list.prepend(commentEl);
 }
 // A new reaction handler specifically for comments
+// Modified handleCommentReaction function to send strings
 async function handleCommentReaction(commentId, reactionType) {
     if (!isLoggedIn()) { 
         alert('Please login to react to comments');
@@ -738,46 +739,55 @@ async function handleCommentReaction(commentId, reactionType) {
     }
 
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    // Ensure userId is a number
-    const userId = parseInt(user.id, 10);
-    if (!userId || isNaN(userId)) { 
+    // Convert to string (instead of parseInt)
+    const userId = String(user.id);
+    if (!userId || userId === 'undefined' || userId === 'null') { 
         alert('User information not found. Please log in again.');
         return;
     }
 
-    // Ensure commentId is a number
-    const numericCommentId = parseInt(commentId, 10);
-    if (isNaN(numericCommentId)) {
+    // Convert commentId to string
+    const commentIdStr = String(commentId);
+    if (!commentIdStr || commentIdStr === 'undefined') {
         console.error("Invalid comment ID:", commentId);
         return;
     }
 
     try {
-        const response = await fetch("/like", {
+        console.log("Sending comment reaction:", {
+            user_id: userId,      // Send as string
+            comment_id: commentIdStr, // Send as string
+            like_type: reactionType
+        });
+
+        const response = await fetch("/comment/like", {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
             credentials: 'include',
             body: JSON.stringify({
-                user_id: userId,
-                comment_id: numericCommentId,
+                user_id: userId,         // String instead of number
+                comment_id: commentIdStr, // String instead of number
                 like_type: reactionType
             })
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to process reaction');
+            const error = await response.text();
+            throw new Error(error || 'Failed to process reaction');
         }
         
         const data = await response.json();
-        updateCommentReactionsUI(numericCommentId, data);
+        console.log("Received response:", data);
+        updateCommentReactionsUI(parseInt(commentIdStr), data);
 
     } catch (error) {
         console.error(`Error handling comment ${reactionType}:`, error);
         alert(error.message || 'Failed to process reaction');
     }
 }
-
 // A new UI updater for comments
 function updateCommentReactionsUI(commentId, data) {
     const commentEl = document.querySelector(`.comment[data-comment-id="${commentId}"]`);
