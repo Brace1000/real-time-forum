@@ -8,9 +8,10 @@ import (
 	"real/db"
 	"strconv"
 	"time"
+    "database/sql"
 )
 
-// You should already have this struct definition from before.
+// Comment struct definition
 type Comment struct {
     CommentID    int       `json:"comment_id"`
     PostID       int       `json:"post_id"`
@@ -23,6 +24,27 @@ type Comment struct {
     Likes        int       `json:"likes"`
     Dislikes     int       `json:"dislikes"`
     UserReaction string    `json:"user_reaction"`
+}
+
+// Comment reaction request struct
+type CommentReactionRequest struct {
+    UserID    int    `json:"user_id,string"`    
+    CommentID int    `json:"comment_id,string"` 
+    LikeType  string `json:"like_type"`
+}
+type CommentReactionRequestAlt struct {
+    UserIDStr    string `json:"user_id"`
+    CommentIDStr string `json:"comment_id"`
+    LikeType     string `json:"like_type"`
+}
+
+// Helper method to convert to integers
+func (r *CommentReactionRequestAlt) GetUserID() (int, error) {
+    return strconv.Atoi(r.UserIDStr)
+}
+
+func (r *CommentReactionRequestAlt) GetCommentID() (int, error) {
+    return strconv.Atoi(r.CommentIDStr)
 }
 
 func CreateCommentHandler(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +109,7 @@ func CreateCommentHandler(w http.ResponseWriter, r *http.Request) {
     // Get the new comment ID
     commentID, err := result.LastInsertId()
     if err != nil {
-        log.Printf("Error getting last insert ID: %v", err)
+        
         w.WriteHeader(http.StatusInternalServerError)
         json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get comment ID"})
         return
@@ -103,8 +125,8 @@ func CreateCommentHandler(w http.ResponseWriter, r *http.Request) {
             c.content, 
             c.created_at,
             u.username,
-            u.first_name,
-            u.last_name,
+            COALESCE(u.first_name, '') as first_name,
+            COALESCE(u.last_name, '') as last_name,
             0 as likes,
             0 as dislikes,
             '' as user_reaction
@@ -135,4 +157,132 @@ func CreateCommentHandler(w http.ResponseWriter, r *http.Request) {
     // Success response
     w.WriteHeader(http.StatusCreated)
     json.NewEncoder(w).Encode(comment)
+}
+
+func CommentReactionHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    if r.Method != http.MethodPost {
+        w.WriteHeader(http.StatusMethodNotAllowed)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request method"})
+        return
+    }
+
+    // Parse request body
+    var req CommentReactionRequest
+    
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request data"})
+        return
+    }
+
+   
+
+    // Validate input
+    if req.UserID <= 0 || req.CommentID <= 0 {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Invalid user or comment ID"})
+        return
+    }
+
+    if req.LikeType != "like" && req.LikeType != "dislike" {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Invalid reaction type"})
+        return
+    }
+
+    // Check if reaction exists
+    var existingReaction string
+    err := db.DB.QueryRow(`
+        SELECT reaction_type FROM comment_reactions 
+        WHERE user_id = ? AND comment_id = ?
+    `, req.UserID, req.CommentID).Scan(&existingReaction)
+
+    // Handle reaction based on current state
+    var query string
+    var args []interface{}
+    
+    if err == sql.ErrNoRows {
+        // New reaction - insert
+        query = `INSERT INTO comment_reactions (user_id, comment_id, reaction_type) VALUES (?, ?, ?)`
+        args = []interface{}{req.UserID, req.CommentID, req.LikeType}
+        
+    } else if err == nil && existingReaction == req.LikeType {
+        // Same reaction - remove it (toggle off)
+        query = `DELETE FROM comment_reactions WHERE user_id = ? AND comment_id = ?`
+        args = []interface{}{req.UserID, req.CommentID}
+        
+    } else if err == nil {
+        // Different reaction - update it
+        query = `UPDATE comment_reactions SET reaction_type = ? WHERE user_id = ? AND comment_id = ?`
+        args = []interface{}{req.LikeType, req.UserID, req.CommentID}
+        
+    } else {
+        // Database error
+        log.Printf("Database error checking existing reaction: %v", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
+        return
+    }
+
+    // Execute the query
+    _, err = db.DB.Exec(query, args...)
+    if err != nil {
+        log.Printf("Database error executing reaction query: %v", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Failed to process reaction"})
+        return
+    }
+
+    // Get updated counts and user's current reaction
+    var likes, dislikes int
+    var userReaction sql.NullString
+    
+    err = db.DB.QueryRow(`
+        SELECT 
+            COALESCE(SUM(CASE WHEN reaction_type = 'like' THEN 1 ELSE 0 END), 0) as likes,
+            COALESCE(SUM(CASE WHEN reaction_type = 'dislike' THEN 1 ELSE 0 END), 0) as dislikes
+        FROM comment_reactions
+        WHERE comment_id = ?
+        GROUP BY comment_id
+        UNION ALL
+        SELECT 0, 0
+        WHERE NOT EXISTS (SELECT 1 FROM comment_reactions WHERE comment_id = ?)
+        LIMIT 1
+    `, req.CommentID, req.CommentID).Scan(&likes, &dislikes)
+
+    if err != nil {
+        
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get reaction counts"})
+        return
+    }
+
+    // Get user's current reaction
+    err = db.DB.QueryRow(`
+        SELECT reaction_type FROM comment_reactions 
+        WHERE user_id = ? AND comment_id = ?
+    `, req.UserID, req.CommentID).Scan(&userReaction)
+
+    var userReactionStr string
+    if err == sql.ErrNoRows {
+        userReactionStr = ""
+    } else if err != nil {
+        log.Printf("Error getting user reaction: %v", err)
+        userReactionStr = ""
+    } else {
+        userReactionStr = userReaction.String
+    }
+
+    // Return response
+    response := map[string]interface{}{
+        "success":      true,
+        "likes":        likes,
+        "dislikes":     dislikes,
+        "userReaction": userReactionStr,
+    }
+    
+ 
+    json.NewEncoder(w).Encode(response)
 }
